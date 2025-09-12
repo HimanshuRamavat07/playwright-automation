@@ -1,13 +1,10 @@
 name: Daily Playwright Run
-
 on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch: {}
-
 permissions:
   contents: read
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -15,24 +12,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-
       - name: Install dependencies
         run: npm ci
-
       - name: Install Playwright Browsers
-        uses: microsoft/playwright-github-action@v1
-
+        run: npx playwright install --with-deps
       - name: Run tests
         env:
           SLACK_WEBHOOK_URLS: ${{ secrets.SLACK_WEBHOOK_URLS || '' }}
         run: npx playwright test --reporter=list,html
-
       - name: Upload Playwright HTML Report
         if: always()
         uses: actions/upload-artifact@v4
@@ -40,7 +32,6 @@ jobs:
           name: playwright-report
           path: playwright-report
           if-no-files-found: warn
-
       - name: Upload Test Results
         if: always()
         uses: actions/upload-artifact@v4
