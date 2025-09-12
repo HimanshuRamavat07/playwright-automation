@@ -1,17 +1,26 @@
 // playwright.config.js
-const { defineConfig } = require('@playwright/test');
+const { defineConfig, devices } = require('@playwright/test');
+const isCI = !!process.env.CI;
 
 module.exports = defineConfig({
   testDir: './tests',
-  timeout: 60000,
+  timeout: 60_000,
+  expect: { timeout: 10_000 },
+  /* Helpful CI defaults */
+  forbidOnly: isCI,
+  retries: isCI ? 2 : 0,
+  workers: isCI ? 2 : undefined,
   use: {
-    headless: false, // show browser
+    headless: isCI ? true : false,
     viewport: { width: 1280, height: 800 },
-    screenshot: 'on', // take screenshots on failure & when using page.screenshot()
-    video: 'on', // record video
-    trace: 'on-first-retry', // capture debugging trace
+    actionTimeout: 10_000,
+    navigationTimeout: 30_000,
+    screenshot: isCI ? 'only-on-failure' : 'on',
+    video: isCI ? 'retain-on-failure' : 'on',
+    trace: 'on-first-retry',
+    // channel or browserName can be configured if needed
   },
   reporter: [
-    ['html', { open: 'never' }] // HTML report
+    ['html', { open: 'never' }]
   ]
 });

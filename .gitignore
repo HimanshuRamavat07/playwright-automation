@@ -5,4 +5,9 @@ node_modules/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
-/screenshots
+.env
+.env.*
+/screenshots/
+.DS_Store
+Thumbs.db
+*.log

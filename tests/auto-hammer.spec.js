@@ -1,8 +1,60 @@
 const { test, expect } = require('@playwright/test');
 const axios = require('axios');
+// Load environment variables from .env if present (without failing in CI if missing)
+try { require('dotenv').config(); } catch (_) {}
 
 // ================== Slack Config ==================
-const SLACK_WEBHOOK_URL = "https://hooks.slack.com/services/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"; // Replace with yours
+function parseWebhookCsv(value) {
+  if (!value) return [];
+  return value
+    .split(/[\n,]/)
+    .map(v => v.trim())
+    .filter(Boolean);
+}
+
+function collectNumberedEnv(prefix, max = 20) {
+  const values = [];
+  for (let i = 1; i <= max; i++) {
+    const v = process.env[`${prefix}_${i}`];
+    if (v && v.trim()) values.push(v.trim());
+  }
+  return values;
+}
+
+function isLikelySlackWebhook(url) {
+  return /^https:\/\/hooks\.slack\.com\/services\/.+/.test(url);
+}
+
+function loadSlackWebhookUrls() {
+  const fromCsv = parseWebhookCsv(process.env.SLACK_WEBHOOK_URLS);
+  const fromNumbered = collectNumberedEnv('SLACK_WEBHOOK_URL');
+  const all = [...fromCsv, ...fromNumbered]
+    .map(u => u.trim())
+    .filter(Boolean);
+
+  // Dedupe
+  const deduped = Array.from(new Set(all));
+
+  // Validate and warn about invalids
+  const valid = [];
+  for (const u of deduped) {
+    if (isLikelySlackWebhook(u)) {
+      valid.push(u);
+    } else {
+      console.warn('⚠️ Ignoring invalid SLACK webhook URL format:', u.replace(/^(https?:\/\/[^/]+).*/, '$1/...'));
+    }
+  }
+
+
+  if (valid.length === 0) {
+    console.log('ℹ️ No Slack webhook URLs configured. Set SLACK_WEBHOOK_URLS or SLACK_WEBHOOK_URL_1, _2, ...');
+  } else {
+    console.log(`ℹ️ Slack webhooks configured: ${valid.length}`);
+  }
+  return valid;
+}
+
+const SLACK_WEBHOOK_URLS = loadSlackWebhookUrls();
 const SLACK_APP_NAME = "Autohammer Result Test";
 const SLACK_ICON = ":robot_face:";
 
@@ -11,6 +63,7 @@ let passedChecks = 0;
 let failedChecks = 0;
 let resultsLog = [];
 
+// ================== Helper Functions ==================
 function getCurrentDateTime() {
   const now = new Date();
   const day = String(now.getDate()).padStart(2, '0');
@@ -39,15 +92,27 @@ async function sendSlackReport() {
     unfurl_media: false,
   };
 
-  try {
-    await axios.post(SLACK_WEBHOOK_URL, payload);
-    console.log("✅ Slack notification sent!");
-  } catch (error) {
-    console.error("❌ Failed to send Slack notification", error);
+  if (!SLACK_WEBHOOK_URLS || SLACK_WEBHOOK_URLS.length === 0) {
+    console.log('ℹ️ Skipping Slack notification: no webhooks configured');
+    return;
   }
+
+  const results = await Promise.allSettled(
+    SLACK_WEBHOOK_URLS.map(url => axios.post(url, payload, { timeout: 10000 }))
+  );
+
+  results.forEach((res, idx) => {
+    const url = SLACK_WEBHOOK_URLS[idx];
+    const masked = url.replace(/^(https?:\/\/[^/]+\/[^/]+\/)[^/]+\/[^/]+\/(.+)$/, '$1.../$2');
+    if (res.status === 'fulfilled') {
+      console.log(`✅ Slack notification sent -> ${masked}`);
+    } else {
+      const errMsg = res.reason && res.reason.message ? res.reason.message : String(res.reason);
+      console.error(`❌ Failed to send Slack notification -> ${masked}: ${errMsg}`);
+    }
+  });
 }
 
-// ================== Playwright Logic ==================
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 async function acceptConsent(page) {
@@ -113,6 +178,7 @@ async function selectStandortAndWait(page, value, label) {
   return readAutohammerCounts(page, label);
 }
 
+// ================== Playwright Test ==================
 test('Radebeul & Grimma: mobile.de resultsMatched must equal autohammer branch max', async ({ page }) => {
   test.setTimeout(180000);
 
